@@ -113,7 +113,7 @@ app.get("/user/tweets/feed/", authenticator, async (request, response) => {
   const user_id1 = user.user_id;
 
   const getTweetsQuery = `
-    select user.username , tweet.tweet,tweet.date_time
+    select user.username as username, tweet.tweet as tweet, tweet.date_time as dateTime
     from user 
     inner join follower on user.user_id = follower.follower_user_id
     inner join tweet on tweet.user_id = follower.following_user_id
@@ -121,8 +121,8 @@ app.get("/user/tweets/feed/", authenticator, async (request, response) => {
     limit 4;`;
 
   const getTweets = await db.all(getTweetsQuery);
-  console.log(typeof getTweets);
-  response.send(getTweets.map((each) => convertDbToResponseOb(each)));
+  let obj = JSON.stringify(getTweets);
+  response.send(getTweets);
 });
 
 /** API-4 Returns the list of all names of people whom the user follows */
@@ -167,7 +167,7 @@ WHERE
   response.send(getHeFollows);
 });
 
-/** API-6 Get tweets of whom he is following */
+/** API-6 Get tweet of whom he is following */
 app.get("/tweets/:tweetId/", authenticator, async (request, response) => {
   const { tweetId } = request.params;
   let { username } = request;
@@ -187,22 +187,78 @@ WHERE
 
   const checkFollowing = await db.all(getHeFollowsQuery);
 
-  if (checkFollowing.length === 0) {
-    response.status(401);
-    response.send("Invalid Request");
-  } else {
-    const getData = ` select tweet.tweet, count(distinct like.tweet_id) as likes, count(distinct reply.tweet_id) as replies, tweet.date_time as dateTime 
+  let whomHeFollows = [];
+  checkFollowing.forEach((each) => {
+    whomHeFollows.push(each.user_id);
+  });
+
+  const selectUserQuery = `select user_id from tweet where tweet_id = ${tweetId};`;
+
+  const res = await db.get(selectUserQuery);
+  const theUserIdBasedOnGivenTwitterId = res.user_id;
+
+  if (whomHeFollows.includes(theUserIdBasedOnGivenTwitterId)) {
+    const getData = ` select tweet.tweet, count(distinct like.like_id) as likes, count(distinct reply.reply_id) as replies, tweet.date_time as dateTime 
       from tweet
-        inner join reply on tweet.user_id = reply.user_id 
-        inner join like on reply.user_id = like.user_id
-        where like.user_id= ${user_id1}
-        group by tweet.tweet_id`;
+        inner join reply on tweet.tweet_id = reply.tweet_id 
+        inner join like on reply.tweet_id = like.tweet_id
+        where tweet.tweet_id= ${tweetId}`;
     const tweet = await db.get(getData);
     response.send(tweet);
+  } else {
+    response.status(401);
+    response.send("Invalid Request");
   }
 });
 
-/**API-8 GET get all user-tweet replies*/
+/** API-7 Get tweets-likes of whom he is following */
+app.get("/tweets/:tweetId/likes/", authenticator, async (request, response) => {
+  const { tweetId } = request.params;
+  let { username } = request;
+
+  const userQuery = `select * from user where username= "${username}";`;
+  const user = await db.get(userQuery);
+  const user_id1 = user.user_id;
+
+  const getHeFollowsQuery = `
+    SELECT
+      *
+   FROM    
+      user
+   INNER JOIN follower ON user.user_id = follower.following_user_id
+WHERE
+  follower.follower_user_id = ${user_id1};`;
+
+  const checkFollowing = await db.all(getHeFollowsQuery);
+
+  let whomHeFollows = [];
+  checkFollowing.forEach((each) => {
+    whomHeFollows.push(each.user_id);
+  });
+
+  const selectUserQuery = `select user_id from tweet where tweet_id = ${tweetId};`;
+  const res = await db.get(selectUserQuery);
+  const theUserIdBasedOnGivenTwitterId = res.user_id;
+
+  if (!whomHeFollows.includes(theUserIdBasedOnGivenTwitterId)) {
+    response.status(401);
+    response.send("Invalid Request");
+  } else {
+    const getData = ` select user.username
+      from tweet
+        inner join like on tweet.tweet_id = like.tweet_id 
+        inner join user on user.user_id = like.user_id
+        where tweet.tweet_id= ${tweetId};`;
+    const usernames = await db.all(getData);
+    let userList = [];
+    usernames.forEach((each) => {
+      userList.push(each.username);
+    });
+    response.send({ likes: userList });
+  }
+});
+
+/**API-8 GET get all user-tweet replies whom he follows*/
 app.get(
   "/tweets/:tweetId/replies/",
   authenticator,
@@ -215,18 +271,37 @@ app.get(
     const user_id1 = user.user_id;
 
     const getHeFollowsQuery = `
-    select user.name, reply.reply 
-    from user 
-    inner join follower on user.user_id = follower.following_user_id
-    inner join 
-    where tweet_id= "${tweetId}";`;
+    SELECT
+      *
+   FROM    
+      user
+   INNER JOIN follower ON user.user_id = follower.following_user_id
+WHERE
+  follower.follower_user_id = ${user_id1};`;
 
-    const getHeFollows = await db.all(getHeFollowsQuery);
+    const checkFollowing = await db.all(getHeFollowsQuery);
 
-    if (user_id1 === user_id2) {
-    } else {
+    let whomHeFollows = [];
+    checkFollowing.forEach((each) => {
+      whomHeFollows.push(each.user_id);
+    });
+
+    const selectUserQuery = `select user_id from tweet where tweet_id = ${tweetId};`;
+    const res = await db.get(selectUserQuery);
+    const theUserIdBasedOnGivenTwitterId = res.user_id;
+
+    if (!whomHeFollows.includes(theUserIdBasedOnGivenTwitterId)) {
       response.status(401);
       response.send("Invalid Request");
+    } else {
+      const getData = ` select user.name,reply.reply
+      from tweet
+        inner join reply on tweet.tweet_id = reply.tweet_id 
+        inner join user on user.user_id = reply.user_id
+        where tweet.tweet_id= ${tweetId};`;
+      const usernames = await db.all(getData);
+
+      response.send({ replies: usernames });
     }
   }
 );
@@ -240,11 +315,11 @@ app.get("/user/tweets/", authenticator, async (request, response) => {
   const user_id1 = user.user_id;
 
   const getData = `
-      select tweet.tweet, count(distinct like.tweet_id) as likes, count(distinct reply.tweet_id) as replies, tweet.date_time as dateTime 
+      select tweet.tweet, count(distinct like.like_id) as likes, count(distinct reply.reply_id) as replies, tweet.date_time as dateTime 
       from tweet
-        inner join reply on tweet.user_id = reply.user_id 
-        inner join like on reply.user_id = like.user_id
-        where like.user_id= ${user_id1}
+        inner join reply on tweet.tweet_id = reply.tweet_id 
+        inner join like on tweet.tweet_id = like.tweet_id
+        where tweet.user_id= ${user_id1}
         group by tweet.tweet_id;
     `;
   const data = await db.all(getData);
