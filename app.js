@@ -97,13 +97,7 @@ app.post("/login/", async (request, response) => {
   }
 });
 
-const convertDbToResponseOb = (obj) => {
-  return {
-    username: obj.username,
-    tweet: obj.tweet,
-    dateTime: obj.date_time,
-  };
-};
+
 /** API-3 Returns the latest tweets of people whom the user follows. Return 4 tweets at a time */
 app.get("/user/tweets/feed/", authenticator, async (request, response) => {
   let { username } = request;
