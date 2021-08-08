@@ -97,7 +97,6 @@ app.post("/login/", async (request, response) => {
   }
 });
 
-
 /** API-3 Returns the latest tweets of people whom the user follows. Return 4 tweets at a time */
 app.get("/user/tweets/feed/", authenticator, async (request, response) => {
   let { username } = request;
@@ -108,14 +107,21 @@ app.get("/user/tweets/feed/", authenticator, async (request, response) => {
 
   const getTweetsQuery = `
     select user.username as username, tweet.tweet as tweet, tweet.date_time as dateTime
-    from user 
-    inner join follower on user.user_id = follower.follower_user_id
-    inner join tweet on tweet.user_id = follower.following_user_id
-    where follower.following_user_id= "${user_id1}" 
-    limit 4;`;
+    from (user 
+    inner join follower on user.user_id = follower.following_user_id) as T
+    inner join tweet on tweet.user_id = T.following_user_id
+    where T.follower_user_id= ${user_id1}
+    order by 
+    strftime("Y",date_time), 
+    strftime("m",date_time),
+    strftime("d",date_time),
+    strftime("H",date_time),
+    strftime("M",date_time),
+    strftime("S",date_time),
+    user.username asc;`;
 
   const getTweets = await db.all(getTweetsQuery);
-  let obj = JSON.stringify(getTweets);
+
   response.send(getTweets);
 });
 
